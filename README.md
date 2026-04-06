@@ -5,7 +5,7 @@ A full-stack search application that proxies requests to DuckDuckGo, keeps a Pos
 ## 🚀 Quick Start
 
 ### 1. Database Setup
-Ensure Docker is running, then start the PostgreSQL instance:
+Ensure Docker is running, then start the PostgreSQL instance (don't forget to set ENV vars in backend/.env):
 ```bash
 docker compose up -d
 ```
