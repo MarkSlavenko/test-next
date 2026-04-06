@@ -1,12 +1,15 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, Inject, InternalServerErrorException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 import { SearchHistory } from './entities/search-history.entity';
+import { CACHE_TTL_MS } from '../common/constants';
 
 interface DdgTopic {
   Text?: string;
@@ -27,30 +30,38 @@ export class SearchService {
     private readonly searchHistoryRepository: Repository<SearchHistory>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-  ) {}
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) { }
 
   async fetchFromDuckDuckGo(query: string, page: number = 1, limit: number = 10) {
     try {
-      const baseUrl = this.configService.get<string>('DDG_API_URL');
-      const url = `${baseUrl}?q=${encodeURIComponent(query)}&format=json`;
+      const cacheKey = `search:${query}`;
+      let results = await this.cacheManager.get<any[]>(cacheKey);
 
-      const response = await firstValueFrom(this.httpService.get<DdgResponse>(url));
-      const topics = response.data.RelatedTopics || [];
+      if (!results) {
+        const baseUrl = this.configService.get<string>('DDG_API_URL');
+        const url = `${baseUrl}?q=${encodeURIComponent(query)}&format=json`;
 
-      // 2. Generate IDs during mapping on the backend
-      const results = topics.flatMap((topic: DdgTopic) => {
-        if (topic.Topics) {
-          return topic.Topics.map((t) => ({
-            id: randomUUID(),
-            title: t.Text,
-            url: t.FirstURL,
-          }));
-        }
-        if (topic.Text && topic.FirstURL) {
-          return [{ id: randomUUID(), title: topic.Text, url: topic.FirstURL }];
-        }
-        return [];
-      });
+        const response = await firstValueFrom(this.httpService.get<DdgResponse>(url));
+        const topics = response.data.RelatedTopics || [];
+
+        // 2. Generate IDs during mapping on the backend
+        results = topics.flatMap((topic: DdgTopic) => {
+          if (topic.Topics) {
+            return topic.Topics.map((t) => ({
+              id: randomUUID(),
+              title: t.Text,
+              url: t.FirstURL,
+            }));
+          }
+          if (topic.Text && topic.FirstURL) {
+            return [{ id: randomUUID(), title: topic.Text, url: topic.FirstURL }];
+          }
+          return [];
+        });
+
+        await this.cacheManager.set(cacheKey, results, CACHE_TTL_MS);
+      }
 
       const startIndex = (page - 1) * limit;
       const paginatedResults = results.slice(startIndex, startIndex + limit);
