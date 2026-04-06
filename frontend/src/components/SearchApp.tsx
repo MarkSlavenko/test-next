@@ -1,54 +1,56 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Search, Loader2, Clock, ChevronLeft, ChevronRight, SearchX, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, Loader2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-import { HighlightText } from './HighlightText';
-
 import { searchSchema, SearchFormValues, executeSearch, SearchResult, SearchHistoryItem } from '@/lib/api';
-
-interface SearchAppProps {
-  initialHistory: SearchHistoryItem[];
-}
+import { HighlightText } from './HighlightText';
+import { escapeRegExp } from '@/utils/string';
+import { HistorySidebar } from '@/components/HistorySidebar';
+import { FindInPageToolbar } from '@/components/FindInPageToolbar';
+import { PaginationControls } from '@/components/PaginationControls';
 
 const ITEMS_PER_PAGE = 10;
 
-export default function SearchApp({ initialHistory }: SearchAppProps) {
+export default function SearchApp({ initialHistory }: { initialHistory: SearchHistoryItem[] }) {
   const router = useRouter();
+
+  // Data State
+  const [currentQuery, setCurrentQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [totalResults, setTotalResults] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // UI State
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [currentPage, setCurrentPage] = useState(1);
+  // Find in page state
   const [findQuery, setFindQuery] = useState('');
   const [activeMatchIdx, setActiveMatchIdx] = useState(0);
 
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    formState: { errors },
-  } = useForm<SearchFormValues>({
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm<SearchFormValues>({
     resolver: zodResolver(searchSchema),
   });
 
-  const performSearch = async (query: string, saveToDb = false) => {
+  const performSearch = async (query: string, saveToDb = false, page = 1) => {
     setIsLoading(true);
     setError('');
+    setCurrentQuery(query);
 
     try {
-      const data = await executeSearch(query, saveToDb);
+      const data = await executeSearch(query, saveToDb, page, ITEMS_PER_PAGE);
+
       setResults(data.results);
       setTotalResults(data.total);
-      setCurrentPage(1);
+      setCurrentPage(page);
+      setFindQuery('');
+      setActiveMatchIdx(0);
 
-      if (saveToDb) {
-        router.refresh();
-      }
+      if (saveToDb) router.refresh();
     } catch (err) {
       setError('Failed to fetch results. Please try again.');
     } finally {
@@ -56,84 +58,67 @@ export default function SearchApp({ initialHistory }: SearchAppProps) {
     }
   };
 
-  const onSubmit = (data: SearchFormValues) => {
-    performSearch(data.query, true);
-  };
-
+  const onSubmit = (data: SearchFormValues) => performSearch(data.query, true, 1);
   const handleHistoryClick = (query: string) => {
     setValue('query', query);
-    performSearch(query, false);
+    performSearch(query, false, 1);
   };
+  const handlePageChange = (newPage: number) => performSearch(currentQuery, false, newPage);
 
-  const totalPages = Math.ceil(results.length / ITEMS_PER_PAGE);
-  const paginatedResults = results.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+  const { items: resultsWithOffsets, totalMatches } = useMemo(() => {
+    if (!results.length) return { items: [], totalMatches: 0 };
 
-  let totalMatches = 0;
-  const paginatedResultsWithOffsets = paginatedResults.map(result => {
-    const titleMatches = findQuery ? (result.title.match(new RegExp(findQuery.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'), 'gi')) || []).length : 0;
-    const urlMatches = findQuery ? (result.url.match(new RegExp(findQuery.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&'), 'gi')) || []).length : 0;
+    let total = 0;
+    const items = results.map(result => {
+      const safeQuery = findQuery ? escapeRegExp(findQuery) : '';
+      const regex = safeQuery ? new RegExp(safeQuery, 'gi') : null;
 
-    const item = {
-      ...result,
-      titleOffset: totalMatches,
-      urlOffset: totalMatches + titleMatches,
-    };
+      const titleMatches = regex ? (result.title.match(regex) || []).length : 0;
+      const urlMatches = regex ? (result.url.match(regex) || []).length : 0;
 
-    totalMatches += titleMatches + urlMatches;
-    return item;
-  });
+      const item = {
+        ...result,
+        titleOffset: total,
+        urlOffset: total + titleMatches,
+      };
+
+      total += titleMatches + urlMatches;
+      return item;
+    });
+
+    return { items, totalMatches: total };
+  }, [results, findQuery]);
+
+  useEffect(() => {
+    setActiveMatchIdx(0);
+  }, [findQuery]);
+
+  const scrollToMatch = () => {
+    if (totalMatches > 0) {
+      const el = document.getElementById(`match-${activeMatchIdx}`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+
+  useEffect(() => {
+    scrollToMatch();
+  }, [activeMatchIdx, totalMatches]);
 
   const navigateFind = (direction: 'next' | 'prev') => {
     if (totalMatches === 0) return;
-
-    let newIdx = activeMatchIdx;
-    if (direction === 'next') {
-      newIdx = (activeMatchIdx + 1) % totalMatches;
-    } else {
-      newIdx = (activeMatchIdx - 1 + totalMatches) % totalMatches;
-    }
-
-    setActiveMatchIdx(newIdx);
-
-    // Smooth scroll to the active match
-    setTimeout(() => {
-      document.getElementById(`match-${newIdx}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 50);
+    setActiveMatchIdx(prev =>
+      direction === 'next'
+        ? (prev + 1) % totalMatches
+        : (prev - 1 + totalMatches) % totalMatches
+    );
   };
 
-  const handlePageChange = (newPage: number) => {
-    setCurrentPage(newPage);
-    setActiveMatchIdx(0);
-  };
+  const totalPages = Math.ceil(totalResults / ITEMS_PER_PAGE);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 text-gray-900">
-      {/* Sidebar - History */}
-      <aside className="w-full md:w-64 bg-white border-r p-4 shadow-sm">
-        <h2 className="flex items-center gap-2 font-semibold text-lg mb-4 text-gray-700">
-          <Clock size={20} /> Query History
-        </h2>
-        <ul className="space-y-2">
-          {initialHistory.slice(0, 10).map((item) => (
-            <li key={item.id}>
-              <button
-                onClick={() => handleHistoryClick(item.query)}
-                className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-gray-100 transition-colors truncate"
-              >
-                {item.query}
-              </button>
-            </li>
-          ))}
-          {initialHistory.length === 0 && (
-            <li className="text-sm text-gray-500 italic">No recent searches</li>
-          )}
-        </ul>
-      </aside>
+      <HistorySidebar history={initialHistory} onSelect={handleHistoryClick} />
 
-      {/* Main Content */}
       <main className="flex-1 p-4 md:p-8">
         <div className="max-w-3xl mx-auto">
           {/* Search Form */}
@@ -154,131 +139,40 @@ export default function SearchApp({ initialHistory }: SearchAppProps) {
                 {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Search'}
               </button>
             </div>
-            {errors.query && (
-              <p className="text-red-500 text-sm mt-2 absolute">{errors.query.message}</p>
-            )}
+            {errors.query && <p className="text-red-500 text-sm mt-2 absolute">{errors.query.message}</p>}
           </form>
 
-          {/* Error & Meta info */}
           {error && <div className="p-4 mb-4 text-red-700 bg-red-100 rounded-lg">{error}</div>}
+          {totalResults > 0 && !isLoading && <p className="text-sm text-gray-500 mb-4">Found {totalResults} results</p>}
 
-          {/* Find in Page Toolbar */}
-          {results.length > 0 && (
-            <div className="mb-6 flex items-center justify-between bg-white p-3 rounded-lg border shadow-sm">
-              <div className="flex items-center gap-3">
-                <SearchX size={18} className="text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Find in results..."
-                  value={findQuery}
-                  onChange={(e) => {
-                    setFindQuery(e.target.value);
-                    setActiveMatchIdx(0);
-                  }}
-                  className="outline-none text-sm bg-transparent"
-                />
-              </div>
-              {findQuery && (
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-gray-500 font-medium">
-                    {totalMatches > 0 ? `${activeMatchIdx + 1} of ${totalMatches}` : '0 of 0'}
-                  </span>
-                  <div className="flex gap-1">
-                    <button onClick={() => navigateFind('prev')} disabled={totalMatches === 0} className="p-1 hover:bg-gray-100 rounded disabled:opacity-50">
-                      <ArrowUp size={16} />
-                    </button>
-                    <button onClick={() => navigateFind('next')} disabled={totalMatches === 0} className="p-1 hover:bg-gray-100 rounded disabled:opacity-50">
-                      <ArrowDown size={16} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {totalResults > 0 && !isLoading && (
-            <p className="text-sm text-gray-500 mb-4">
-              Found {totalResults} results
-            </p>
-          )}
+          <FindInPageToolbar
+            hasResults={results.length > 0}
+            findQuery={findQuery}
+            setFindQuery={setFindQuery}
+            totalMatches={totalMatches}
+            activeMatchIdx={activeMatchIdx}
+            onNavigate={navigateFind}
+          />
 
           {/* Results List */}
           <div className="space-y-6">
-            {paginatedResultsWithOffsets.map((result, idx) => (
-              <div key={idx} className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-                <a
-                  href={result.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xl font-medium text-blue-600 hover:underline line-clamp-1 block"
-                >
-                  <HighlightText
-                    text={result.title}
-                    query={findQuery}
-                    matchOffset={result.titleOffset}
-                    activeMatchIdx={activeMatchIdx}
-                  />
+            {resultsWithOffsets.map((result) => (
+              <div key={result.id} className="bg-white p-5 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+                <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-xl font-medium text-blue-600 hover:underline line-clamp-1 block">
+                  <HighlightText text={result.title} query={findQuery} matchOffset={result.titleOffset} activeMatchIdx={activeMatchIdx} />
                 </a>
                 <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-sm text-green-700 mt-1 block truncate">
-                  <HighlightText
-                    text={result.url}
-                    query={findQuery}
-                    matchOffset={result.urlOffset}
-                    activeMatchIdx={activeMatchIdx}
-                  />
+                  <HighlightText text={result.url} query={findQuery} matchOffset={result.urlOffset} activeMatchIdx={activeMatchIdx} />
                 </a>
               </div>
             ))}
           </div>
 
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="mt-8 flex items-center justify-between border-t pt-4">
-              <button
-                onClick={() => handlePageChange(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                aria-label="Go to previous page"
-                className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 transition-colors"
-              >
-                <ChevronLeft size={16} /> Previous
-              </button>
-
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 font-medium">
-                  Page {currentPage} of {totalPages}
-                </span>
-                <div className="h-4 w-px bg-gray-300"></div>
-                <div className="flex items-center gap-2">
-                  <label htmlFor="jumpPage" className="text-sm text-gray-600">
-                    Jump to:
-                  </label>
-                  <input
-                    id="jumpPage"
-                    type="number"
-                    min={1}
-                    max={totalPages}
-                    value={currentPage}
-                    onChange={(e) => {
-                      const page = parseInt(e.target.value, 10);
-                      if (!isNaN(page) && page >= 1 && page <= totalPages) {
-                        handlePageChange(page);
-                      }
-                    }}
-                    className="w-16 px-2 py-1 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-center"
-                  />
-                </div>
-              </div>
-
-              <button
-                onClick={() => handlePageChange(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                aria-label="Go to next page"
-                className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 transition-colors"
-              >
-                Next <ChevronRight size={16} />
-              </button>
-            </div>
-          )}
+          <PaginationControls
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={handlePageChange}
+          />
         </div>
       </main>
     </div>
