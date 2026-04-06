@@ -31,7 +31,8 @@ export async function executeSearch(
   query: string,
   save = false,
   page = 1,
-  limit = 10
+  limit = 10,
+  signal?: AbortSignal
 ): Promise<SearchResponse> {
 
   const endpoint = save
@@ -41,8 +42,8 @@ export async function executeSearch(
   const res = await fetch(endpoint, {
     method: save ? 'POST' : 'GET',
     headers: { 'Content-Type': 'application/json' },
-
     body: save ? JSON.stringify({ query, page, limit }) : undefined,
+    signal,
   });
 
   if (!res.ok) throw new Error('Search request failed');

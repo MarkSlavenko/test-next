@@ -1,4 +1,5 @@
-import { Fragment } from 'react';
+import { Fragment, memo } from 'react';
+import { escapeRegExp } from '@/utils/string';
 
 interface HighlightTextProps {
   text: string;
@@ -7,10 +8,10 @@ interface HighlightTextProps {
   activeMatchIdx: number;
 }
 
-export function HighlightText({ text, query, matchOffset, activeMatchIdx }: HighlightTextProps) {
+export const HighlightText = memo(function HighlightText({ text, query, matchOffset, activeMatchIdx }: HighlightTextProps) {
   if (!query) return <>{text}</>;
 
-  const escapedQuery = query.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+  const escapedQuery = escapeRegExp(query);
   const parts = text.split(new RegExp(`(${escapedQuery})`, 'gi'));
 
   let currentMatch = matchOffset;
@@ -39,4 +40,4 @@ export function HighlightText({ text, query, matchOffset, activeMatchIdx }: High
       })}
     </>
   );
-}
+});

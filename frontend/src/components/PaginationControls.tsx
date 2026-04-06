@@ -1,6 +1,13 @@
+import { memo } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-export const PaginationControls = ({ currentPage, totalPages, onPageChange }: any) => {
+interface PaginationControlsProps {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}
+
+export const PaginationControls = memo(function PaginationControls({ currentPage, totalPages, onPageChange }: PaginationControlsProps) {
   if (totalPages <= 1) return null;
 
   return (
@@ -8,13 +15,14 @@ export const PaginationControls = ({ currentPage, totalPages, onPageChange }: an
       <button
         onClick={() => onPageChange(Math.max(1, currentPage - 1))}
         disabled={currentPage === 1}
-        className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 cursor-pointer"
+        aria-label="Previous page"
+        className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
       >
         <ChevronLeft size={16} /> Previous
       </button>
 
       <div className="flex items-center gap-3">
-        <span className="text-sm text-gray-600 font-medium">Page {currentPage} of {totalPages}</span>
+        <span className="text-sm text-gray-600 font-medium" aria-current="page">Page {currentPage} of {totalPages}</span>
         <div className="h-4 w-px bg-gray-300"></div>
         <div className="flex items-center gap-2">
           <label htmlFor="jumpPage" className="text-sm text-gray-600">Jump to:</label>
@@ -28,7 +36,7 @@ export const PaginationControls = ({ currentPage, totalPages, onPageChange }: an
               const page = parseInt(e.target.value, 10);
               if (!isNaN(page) && page >= 1 && page <= totalPages) onPageChange(page);
             }}
-            className="w-16 px-2 py-1 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-center"
+            className="w-16 px-2 py-1 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 outline-none text-center transition-shadow"
           />
         </div>
       </div>
@@ -36,10 +44,11 @@ export const PaginationControls = ({ currentPage, totalPages, onPageChange }: an
       <button
         onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
         disabled={currentPage === totalPages}
-        className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 cursor-pointer"
+        aria-label="Next page"
+        className="flex items-center gap-1 px-4 py-2 border rounded-md disabled:opacity-50 hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
       >
         Next <ChevronRight size={16} />
       </button>
     </div>
   );
-};
+});
