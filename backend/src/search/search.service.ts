@@ -45,7 +45,6 @@ export class SearchService {
         const response = await firstValueFrom(this.httpService.get<DdgResponse>(url));
         const topics = response.data.RelatedTopics || [];
 
-        // 2. Generate IDs during mapping on the backend
         results = topics.flatMap((topic: DdgTopic) => {
           if (topic.Topics) {
             return topic.Topics.map((t) => ({
