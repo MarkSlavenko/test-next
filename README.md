@@ -6,12 +6,12 @@ A full-stack search application that proxies requests to DuckDuckGo, keeps a Pos
 
 ### 1. Database Setup
 Ensure Docker is running, then start the PostgreSQL instance:
-\`\`\`bash
+```bash
 docker compose up -d
-\`\`\`
+```
 
 ### 2. Backend Setup
-\`\`\`bash
+```bash
 cd backend
 npm install
 
@@ -20,17 +20,17 @@ npm run migration:run
 
 # Start the NestJS server (runs on http://localhost:3001)
 npm run start:dev
-\`\`\`
+```
 
 ### 3. Frontend Setup
 In a new terminal instance:
-\`\`\`bash
+```bash
 cd frontend
 npm install
 
 # Start the Next.js server (runs on http://localhost:3000)
 npm run dev
-\`\`\`
+```
 
 ---
 
