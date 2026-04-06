@@ -1,16 +1,21 @@
-import { useState, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { executeSearch, SearchResult } from '@/lib/api';
 
 const ITEMS_PER_PAGE = 10;
 
 export function useSearch() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
-  const [currentQuery, setCurrentQuery] = useState('');
+  const initialQ = searchParams.get('q') || '';
+  const initialPage = parseInt(searchParams.get('page') || '1', 10);
+
+  const [currentQuery, setCurrentQuery] = useState(initialQ);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [totalResults, setTotalResults] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(initialPage);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -35,8 +40,20 @@ export function useSearch() {
       setTotalResults(data.total);
       setCurrentPage(page);
 
+      // Update URL
+      const params = new URLSearchParams(searchParams.toString());
+      if (query) {
+        params.set('q', query);
+      } else {
+        params.delete('q');
+      }
+      params.set('page', page.toString());
+      
+      const targetUrl = `${pathname}?${params.toString()}`;
+      router.push(targetUrl, { scroll: false });
+
       if (saveToDb) {
-        router.refresh();
+        router.refresh(); // optionally sync server component with new history
       }
     } catch (err: unknown) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -48,7 +65,16 @@ export function useSearch() {
         setIsLoading(false);
       }
     }
-  }, [router]);
+  }, [router, pathname, searchParams]);
+
+  // Initial load
+  const hasLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!hasLoadedRef.current && initialQ) {
+      hasLoadedRef.current = true;
+      performSearch(initialQ, false, initialPage);
+    }
+  }, [initialQ, initialPage, performSearch]);
 
   return {
     currentQuery,

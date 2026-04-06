@@ -37,6 +37,7 @@ export default function SearchApp({ initialHistory }: { initialHistory: SearchHi
 
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<SearchFormValues>({
     resolver: zodResolver(searchSchema),
+    defaultValues: { query: currentQuery },
   });
 
   const onSubmit = useCallback((data: SearchFormValues) => {
